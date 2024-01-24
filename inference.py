@@ -9,6 +9,7 @@ from models import Generator
 from scipy.io.wavfile import write
 from meldataset import MAX_WAV_VALUE
 from env import AttrDict
+from datetime import datetime
 import json
 import yaml
 from text_preprocess_for_inference import TTSDurAlignPreprocessor, CharTextPreprocessor, TTSPreprocessor
@@ -66,21 +67,21 @@ def load_fastspeech2_model(language, gender, device):
     
     return Text2Speech(train_config=tts_config, model_file=tts_model, device=device)
 
-def text_synthesis(language, gender, sample_text, vocoder, MAX_WAV_VALUE, device):
+def text_synthesis(model, language, gender, sample_text, vocoder, MAX_WAV_VALUE, device):
     # Perform Text-to-Speech synthesis
     with torch.no_grad():
-        # Load the FastSpeech2 model for the specified language and gender
-        
-        model = load_fastspeech2_model(language, gender, device)
        
         # Generate mel-spectrograms from the input text using the FastSpeech2 model
+        print(f"Spectogram Starting: {datetime.now()}")
         out = model(sample_text, decode_conf={"alpha": 1})
-        print("TTS Done")  
+        print(f"Spectogram Ending: {datetime.now()}")
         x = out["feat_gen_denorm"].T.unsqueeze(0) * 2.3262
         x = x.to(device)
         
         # Use the HiFi-GAN vocoder to convert mel-spectrograms to raw audio waveforms
+        print(f"Vocoder Starting: {datetime.now()}")
         y_g_hat = vocoder(x)
+        print(f"Vocoder Ending: {datetime.now()}")
         audio = y_g_hat.squeeze()
         audio = audio * MAX_WAV_VALUE
         audio = audio.cpu().numpy().astype('int16')
@@ -111,14 +112,25 @@ if __name__ == "__main__":
             preprocessor = TTSDurAlignPreprocessor()
 
     # Preprocess the sample text
-    preprocessed_text, phrases = preprocessor.preprocess(args.sample_text, args.language, args.gender)
-    preprocessed_text = " ".join(preprocessed_text)
+    model = load_fastspeech2_model(args.language, args.gender, device)
+    phrases = [ "Hello madam, thanks for calling Lowdha Real Estate, I see you have booked with us before, if you would like to make a new reservation let me know.",
+            "You had raised a request for Name change?",
+           "We are focusing on manufacturing and banks.",
+           "We want to raise an investment of ten thousand dollars.",
+           "Can we set up a call next week to discuss the same?",
+           "Are you Arjun Jain, the founder of fast code dot a i?",
+           "I can resist everything except temptation.",
+           "The truth is rarely pure and never simple."]
 
-    
-    audio = text_synthesis(args.language, args.gender, preprocessed_text, vocoder, MAX_WAV_VALUE, device)
-    if args.output_file:
-        output_file = f"{args.output_file}"
-    else:
-        output_file = f"{args.language}_{args.gender}_output.wav"
+    for i, phrase in enumerate(phrases):
+        print(f"Start time: {datetime.now()}")
+        preprocessed_text, phrases = preprocessor.preprocess(phrase, args.language, args.gender)
+        preprocessed_text = " ".join(preprocessed_text)        
+        audio = text_synthesis(model, args.language, args.gender, preprocessed_text, vocoder, MAX_WAV_VALUE, device)
+        print(f"End time: {datetime.now()}")
+    # if args.output_file:
+    #     output_file = f"{args.output_file}"
+    # else:
+        output_file = f"{args.language}_{args.gender}_{str(i)}_output.wav"
 
-    write(output_file, SAMPLING_RATE, audio)
+        write(output_file, SAMPLING_RATE, audio)
